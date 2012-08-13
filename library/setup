@@ -436,8 +436,7 @@ class LinuxNetwork(Network):
     def populate(self):
         ip_path = self.get_ip_path()
         default_ipv4, default_ipv6 = self.get_default_interfaces(ip_path)
-        interfaces, ips, default_ipv4_alias = self.get_interfaces_tree(ip_path, default_ipv4['address'])
-        default_ipv4['alias'] = default_ipv4_alias
+        interfaces, ips = self.get_interfaces_tree(ip_path, default_ipv4, default_ipv6)
         interfaces['default_ipv4'] = default_ipv4
         interfaces['default_ipv6'] = default_ipv6
         self.facts['interfaces'] = interfaces
@@ -478,12 +477,12 @@ class LinuxNetwork(Network):
                         interface[v]['interface'] = words[i+1]
                     elif words[i] == 'src':
                         interface[v]['address'] = words[i+1]
-                    elif words[i] == 'via':
+                    elif words[i] == 'via' and words[i+1] != command[v][-1]:
                         interface[v]['gateway'] = words[i+1]
         return interface['v4'], interface['v6']
 
 
-    def get_interfaces_tree(self, ip_path, default_ipv4_address):
+    def get_interfaces_tree(self, ip_path, default_ipv4, default_ipv6):
         interfaces = {}
         ips = dict(all_ipv4_addresses = [], all_ipv6_addresses = [])
 
@@ -514,9 +513,11 @@ class LinuxNetwork(Network):
                     network = socket.inet_ntoa(struct.pack('!L', address_bin & netmask_bin))
 
                     alias = words[-1]
-                    # If this is the default address, note its alias
-                    if address == default_ipv4_address:
-                        default_ipv4_alias = alias
+                    # If this is the default address, update default_ipv4
+                    if 'address' in default_ipv4 and default_ipv4['address'] == address:
+                        default_ipv4['netmask'] = netmask
+                        default_ipv4['network'] = network
+                        default_ipv4['alias'] = alias
 
                     interfaces[iface]['ipv4'].append( {
                             'address': address,
@@ -531,6 +532,10 @@ class LinuxNetwork(Network):
                     address, prefix = words[1].split('/')
                     scope = words[3]
 
+                    if 'address' in default_ipv6 and default_ipv6['address'] == address:
+                        default_ipv6['prefix'] = prefix
+                        default_ipv6['scope'] = scope
+
                     interfaces[iface]['ipv6'].append( {
                         'address': address,
                         'prefix': prefix,
@@ -539,7 +544,7 @@ class LinuxNetwork(Network):
                     if not address == '::1':
                         ips['all_ipv6_addresses'].append(address)
 
-        return interfaces, ips, default_ipv4_alias
+        return interfaces, ips
 
     # Obsolete
     def get_interfaces_and_aliases_tree(self, ip_path):
